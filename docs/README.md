@@ -1,15 +1,6 @@
----
-layout: home
-permalink: index.html
 
-# Please update this with your repository name and title
-repository-name: e19-4yp-Integrating-Neuro-Symbolic-AI-for-Pneumonia-Diagnosis-from-Chest-X-trays
-title: Integrating Neuro Symbolic AI for Pneumonia Diagnosis from Chest X-rays: A Synergistic Approach
----
 
-[comment]: # "This is the standard layout for the project, but you can clean this and use your own template"
-
-# Project Title
+# Integrating Neuro Symbolic AI for Pneumonia Diagnosis from Chest X-rays: A Synergistic Approach
 
 #### Team
 
