@@ -1,6 +1,6 @@
 import os
-import pandas as pd 
-import numpy as np 
+import pandas as pd
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (Input, Dense, GlobalAveragePooling2D,
@@ -22,7 +22,6 @@ import json
 from datetime import datetime
 import random
 
-# Set random seeds for reproducibility
 tf.random.set_seed(42)
 np.random.seed(42)
 random.seed(42)
@@ -55,7 +54,7 @@ def load_and_preprocess_image(image_path, augment=True):
         img = np.repeat(img, 3, axis=-1)
         img = img / 255.0
 
-        if augment and np.random.rand() > 0.5:  # Controlled augmentation
+        if augment:
             if np.random.rand() > 0.5:
                 img = cv2.flip(img, 1)
             if np.random.rand() > 0.5:
@@ -69,25 +68,32 @@ def load_and_preprocess_image(image_path, augment=True):
     except Exception as e:
         print(f"Error processing image {image_path}: {str(e)}")
         return None
+
 def process_data(df, split, augment=False):
     images = []
     features = []
     labels = []
+
     for _, row in df.iterrows():
         image_id = row['ImageID']
         if not image_id.endswith('.png'):
             image_id += '.png'
+
         image_path = os.path.join(IMG_DIR, split, row['Binary_Label'], image_id)
         img = load_and_preprocess_image(image_path, augment)
+
         if img is not None:
             images.append(img)
-            features.append(row[['opacity', 'texture', 'edge_density', 'lung_variance', 'texture_complexity']].values) >            labels.append(row['label'])
+            features.append(row[['opacity', 'texture', 'edge_density',
+                               'lung_variance', 'texture_complexity']].values)
+            labels.append(row['label'])
+
     return np.array(images), np.array(features), np.array(labels)
 
 # Process data
 X_train_img, X_train_feat, y_train = process_data(train_df, 'train', augment=True)
-X_val_img, X_val_feat, y_val = process_data(val_df, 'val', augment=False)
-X_test_img, X_test_feat, y_test = process_data(test_df, 'test', augment=False)
+X_val_img, X_val_feat, y_val = process_data(val_df, 'val')
+X_test_img, X_test_feat, y_test = process_data(test_df, 'test')
 
 # Normalize features
 scaler = StandardScaler()
@@ -97,7 +103,8 @@ X_test_feat = scaler.transform(X_test_feat)
 
 # Model building function
 def build_high_accuracy_model():
-    base_model = EfficientNetB0(weights='imagenet', include_top=False, input_shape=(IMG_SIZE[0], IMG_SIZE[1], 3))
+    base_model = EfficientNetB0(weights='imagenet', include_top=False,
+                              input_shape=(IMG_SIZE[0], IMG_SIZE[1], 3))
 
     for layer in base_model.layers[:100]:
         layer.trainable = False
@@ -111,13 +118,13 @@ def build_high_accuracy_model():
     x = BatchNormalization()(x)
     x = Dropout(0.6)(x)
 
-    feature_input = Input(shape=(5,))  # Adjust to (6,) when dt_rule_score is added
+    feature_input = Input(shape=(5,))
     f = Dense(64, activation='swish', kernel_regularizer=l1_l2(0.01, 0.01))(feature_input)
     f = BatchNormalization()(f)
     f = Dropout(0.4)(f)
     f = Dense(32, activation='swish')(f)
 
-     attention1 = Attention()([x, x])
+        attention1 = Attention()([x, x])
     attention2 = Attention()([f, f])
     x = Concatenate()([x, attention1, f, attention2])
 
@@ -129,6 +136,7 @@ def build_high_accuracy_model():
     output = Dense(1, activation='sigmoid')(x)
 
     model = Model(inputs=[image_input, feature_input], outputs=output)
+
     optimizer = Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-07)
     model.compile(
         optimizer=optimizer,
@@ -137,7 +145,7 @@ def build_high_accuracy_model():
     )
 
     return model
-# Callbacks
+  GNU nano 6.2                                        enhanced_model.py                                                 # Callbacks
 callbacks = [
     EarlyStopping(monitor='val_auc', patience=5, mode='max', restore_best_weights=True, verbose=1),
     ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6, verbose=1)
@@ -161,13 +169,16 @@ history = model.fit(
     verbose=1
 )
 
-# Generate evaluation report with all visualizations
+  GNU nano 6.2                                        enhanced_model.py                                                 # Generate evaluation report with all visualizations
 def generate_full_evaluation(model, test_images, test_features, test_labels, output_dir):
+    # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
+    # Generate predictions
     y_pred = model.predict([test_images, test_features])
     y_pred_classes = (y_pred > 0.5).astype(int)
 
+    # 1. Classification Report
     report = classification_report(test_labels, y_pred_classes, target_names=['Normal', 'Pneumonia'], output_dict=True)
     with open(f"{output_dir}/classification_report.json", 'w') as f:
         json.dump(report, f, indent=4)
@@ -175,18 +186,23 @@ def generate_full_evaluation(model, test_images, test_features, test_labels, out
     print("\nClassification Report:")
     print(classification_report(test_labels, y_pred_classes, target_names=['Normal', 'Pneumonia']))
 
-    plt.figure(figsize=(8, 6))
+    # 2. Confusion Matrix
+    plt.figure(figsize=(8,6))
     cm = confusion_matrix(test_labels, y_pred_classes)
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Normal', 'Pneumonia'], yticklabels=['Normal', 'Pne>
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+               xticklabels=['Normal', 'Pneumonia'],
+               yticklabels=['Normal', 'Pneumonia'])
     plt.title('Confusion Matrix')
     plt.ylabel('True Label')
-    plt.xlabel('Predicted Label')
+     plt.xlabel('Predicted Label')
     plt.savefig(f"{output_dir}/confusion_matrix.png")
     plt.close()
     print(f"\nConfusion matrix saved to {output_dir}/confusion_matrix.png")
 
-     fpr, tpr, thresholds = roc_curve(test_labels, y_pred)
+    # 3. ROC Curve
+    fpr, tpr, thresholds = roc_curve(test_labels, y_pred)
     roc_auc = auc(fpr, tpr)
+
     plt.figure()
     plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
     plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
@@ -197,10 +213,11 @@ def generate_full_evaluation(model, test_images, test_features, test_labels, out
     plt.title('Receiver Operating Characteristic')
     plt.legend(loc="lower right")
     plt.savefig(f"{output_dir}/roc_curve.png")
-    plt.close()
+     plt.close()
     print(f"ROC curve saved to {output_dir}/roc_curve.png (AUC = {roc_auc:.4f})")
 
-     precision, recall, _ = precision_recall_curve(test_labels, y_pred)
+    # 4. Precision-Recall Curve
+    precision, recall, _ = precision_recall_curve(test_labels, y_pred)
     plt.figure()
     plt.plot(recall, precision, color='blue', lw=2, label='Precision-Recall curve')
     plt.xlabel('Recall')
@@ -211,6 +228,7 @@ def generate_full_evaluation(model, test_images, test_features, test_labels, out
     plt.close()
     print(f"Precision-Recall curve saved to {output_dir}/precision_recall_curve.png")
 
+    # 5. Prediction Distribution
     plt.figure(figsize=(10, 6))
     plt.hist(y_pred[y_test == 0], bins=50, alpha=0.5, label='Normal', color='blue')
     plt.hist(y_pred[y_test == 1], bins=50, alpha=0.5, label='Pneumonia', color='red')
@@ -220,10 +238,11 @@ def generate_full_evaluation(model, test_images, test_features, test_labels, out
     plt.legend()
     plt.savefig(f"{output_dir}/prediction_distribution.png")
     plt.close()
-    print(f"Prediction distribution saved to {output_dir}/prediction_distribution.png")
 
-     if 'history' in globals():
+     # 6. Training History Plots
+    if 'history' in globals():
         plt.figure(figsize=(12, 5))
+
         plt.subplot(1, 2, 1)
         plt.plot(history.history['accuracy'], label='Train Accuracy')
         plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
@@ -231,6 +250,7 @@ def generate_full_evaluation(model, test_images, test_features, test_labels, out
         plt.ylabel('Accuracy')
         plt.xlabel('Epoch')
         plt.legend()
+
         plt.subplot(1, 2, 2)
         plt.plot(history.history['loss'], label='Train Loss')
         plt.plot(history.history['val_loss'], label='Validation Loss')
@@ -238,12 +258,11 @@ def generate_full_evaluation(model, test_images, test_features, test_labels, out
         plt.ylabel('Loss')
         plt.xlabel('Epoch')
         plt.legend()
+
         plt.tight_layout()
         plt.savefig(f"{output_dir}/training_history.png")
         plt.close()
-        print(f"Training history saved to {output_dir}/training_history.png")
-
-         return {
+        print(f"Training history saved to {output_dir}/training_history.png") return {
         'classification_report': report,
         'confusion_matrix': cm.tolist(),
         'roc_auc': roc_auc,
@@ -282,7 +301,7 @@ print(f"Precision: {final_metrics['precision']:.4f}")
 print(f"F1 Score: {final_metrics['f1_score']:.4f}")
 print("\nAll evaluation artifacts saved to:", CSV_DIR)
 
-# Save model
+# Save model without graphviz dependency
 model.save(f"{CSV_DIR}/pneumonia_detection_model.h5")
 
 # Text-based model summary
@@ -290,6 +309,7 @@ def save_model_summary(model, file_path):
     with open(file_path, 'w') as f:
         def print_to_file(text):
             f.write(text + '\n')
+
         model.summary(print_fn=print_to_file)
         f.write('\n\nDetailed Layer Information:\n')
         f.write('='*50 + '\n')
